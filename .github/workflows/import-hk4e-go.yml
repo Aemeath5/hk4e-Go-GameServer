@@ -1,4 +1,4 @@
-# trigger: verified source import
+# trigger: locate exact uploaded snapshot in preserved history
 name: Import hk4e-go source
 
 on:
@@ -19,13 +19,37 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Clone preserved upstream mirror
+      - name: Clone preserved upstream history
         run: |
           set -euo pipefail
           rm -rf /tmp/hk4e-upstream
-          git clone --depth 1 https://git.gopher.ink/mirrors2/hk4e.git /tmp/hk4e-upstream
+          if ! git clone --filter=blob:none --no-checkout https://git.gopher.ink/mirrors2/hk4e.git /tmp/hk4e-upstream; then
+            rm -rf /tmp/hk4e-upstream
+            git clone --no-checkout https://git.gopher.ink/mirrors2/hk4e.git /tmp/hk4e-upstream
+          fi
 
-      - name: Verify mirror matches uploaded archive
+      - name: Locate exact archive commit
+        run: |
+          set -euo pipefail
+          cd /tmp/hk4e-upstream
+          target='f78629d2fd23f90fddef63811c6f2aa7abe4d6bc255fb261ecda676dc300d3fa'
+          match=''
+          while read -r commit; do
+            hash="$(git show "${commit}:README.md" | sha256sum | awk '{print $1}')"
+            if [ "$hash" = "$target" ]; then
+              match="$commit"
+              break
+            fi
+          done < <(git log --all --format='%H' -- README.md)
+          if [ -z "$match" ]; then
+            echo 'No history commit matches uploaded README.md' >&2
+            exit 1
+          fi
+          echo "MATCH_COMMIT=$match" >> "$GITHUB_ENV"
+          echo "Matched commit: $match"
+          git checkout --detach "$match"
+
+      - name: Verify matched commit against uploaded archive
         run: |
           set -euo pipefail
           cd /tmp/hk4e-upstream
@@ -47,5 +71,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Import hk4e-go source snapshot'
+          git commit -m "Import hk4e-go source snapshot (${MATCH_COMMIT})"
           git push origin HEAD:main
