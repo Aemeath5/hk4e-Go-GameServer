@@ -1,4 +1,4 @@
-# trigger: locate exact uploaded snapshot in preserved history v2
+# trigger: full snapshot fingerprint verification
 name: Import hk4e-go source
 
 on:
@@ -19,54 +19,53 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Clone preserved upstream history
+      - name: Clone matching backup candidate
         run: |
           set -euo pipefail
           rm -rf /tmp/hk4e-upstream
-          if ! git clone --filter=blob:none --no-checkout https://git.gopher.ink/mirrors2/hk4e.git /tmp/hk4e-upstream; then
-            rm -rf /tmp/hk4e-upstream
-            git clone --no-checkout https://git.gopher.ink/mirrors2/hk4e.git /tmp/hk4e-upstream
-          fi
+          git clone --depth 1 https://github.com/qinfyy/hk4e-go-backup.git /tmp/hk4e-upstream
 
-      - name: Locate exact archive commit
+      - name: Verify complete snapshot fingerprint
         run: |
           set -euo pipefail
           cd /tmp/hk4e-upstream
-          target='f78629d2fd23f90fddef63811c6f2aa7abe4d6bc255fb261ecda676dc300d3fa'
-          match=''
-          while read -r commit; do
-            if ! git cat-file -e "${commit}:README.md" 2>/dev/null; then
-              continue
-            fi
-            hash="$(git show "${commit}:README.md" | sha256sum | awk '{print $1}')"
-            if [ "$hash" = "$target" ]; then
-              match="$commit"
-              break
-            fi
-          done < <(git log --all --format='%H' -- README.md)
-          if [ -z "$match" ]; then
-            echo 'No history commit matches uploaded README.md' >&2
-            exit 1
-          fi
-          echo "MATCH_COMMIT=$match" >> "$GITHUB_ENV"
-          echo "Matched commit: $match"
-          git checkout --detach "$match"
+          python3 - <<'PY'
+          import os, hashlib, stat, sys
+          rows=[]
+          count=0
+          total=0
+          for dp,dns,fns in os.walk('.'):
+              if '.git' in dns:
+                  dns.remove('.git')
+              for fn in fns:
+                  p=os.path.join(dp,fn)
+                  rel=os.path.relpath(p,'.').replace(os.sep,'/')
+                  h=hashlib.sha256()
+                  with open(p,'rb') as f:
+                      while True:
+                          b=f.read(1024*1024)
+                          if not b:
+                              break
+                          h.update(b)
+                  exe='1' if (os.stat(p).st_mode & stat.S_IXUSR) else '0'
+                  rows.append(f'{rel}\t{exe}\t{h.hexdigest()}\n')
+                  count += 1
+                  total += os.path.getsize(p)
+          rows.sort()
+          digest=hashlib.sha256(''.join(rows).encode()).hexdigest()
+          print('COUNT', count)
+          print('TOTAL', total)
+          print('MANIFEST_SHA256', digest)
+          expected_count=33833
+          expected_total=274674718
+          expected_digest='7cafbc5eefd04919c200137963ced0d15a1da3c2106247f1727861d97664ba92'
+          if (count,total,digest)!=(expected_count,expected_total,expected_digest):
+              print('Snapshot does not exactly match uploaded archive', file=sys.stderr)
+              sys.exit(1)
+          print('Complete snapshot matches uploaded archive exactly')
+          PY
 
-      - name: Verify matched commit against uploaded archive
-        run: |
-          set -euo pipefail
-          cd /tmp/hk4e-upstream
-          echo 'f78629d2fd23f90fddef63811c6f2aa7abe4d6bc255fb261ecda676dc300d3fa  README.md' | sha256sum -c -
-          echo 'defcce79c82e2d77cde7288487c7b7602bd4856bd545192cce2f291e861a98f6  go.mod' | sha256sum -c -
-          echo '851ff340d5dc106b490a07f1e8fb4d91281b5e3f0692cf6effe0a0f7ce33b89f  Makefile' | sha256sum -c -
-          echo 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  LICENSE' | sha256sum -c -
-          echo '7c3395e6a877dde6799fe8c27f9b671b40d9faa32009d02b0256576d4a5218f1  gs/game/player_quest.go' | sha256sum -c -
-          echo 'f05b4f15b58177fc06e5723274d98946c4efbda8c19d2901c000b9d877b895f9  gs/game/game_user_manager.go' | sha256sum -c -
-          echo '18b6e7a855a119f50f5f845cc1906740ba18c14efd438dfcd2474edf60174d13  gdconf/game_data_config/txt/QuestData_Exported.txt' | sha256sum -c -
-          echo '8fea83bcc4a1668ef1fb420ddf572fca38ba81d9b346e4fa257e07d5928d1c57  gdconf/game_data_config/lua/scene/groups_info.json' | sha256sum -c -
-          echo '33554ed59f3e4a3eb96ebadb0b377ff12047f67db459792f305b9d218b83d51c  cmd/dispatch/application.toml' | sha256sum -c -
-
-      - name: Replace target with verified source snapshot
+      - name: Import verified source snapshot
         run: |
           set -euo pipefail
           rsync -a --delete --exclude='.git' /tmp/hk4e-upstream/ "$GITHUB_WORKSPACE/"
@@ -74,5 +73,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m "Import hk4e-go source snapshot (${MATCH_COMMIT})"
+          git commit -m 'Import verified hk4e-go source snapshot'
           git push origin HEAD:main
