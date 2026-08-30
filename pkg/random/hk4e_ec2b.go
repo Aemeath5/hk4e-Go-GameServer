@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"os"
 )
 
 type Ec2b struct {
@@ -67,16 +66,6 @@ func (e *Ec2b) Bytes() []byte {
 
 func (e *Ec2b) SetSeed(seed uint64) {
 	e.seed = seed
-
-	// True-server style Dispatch may provide the already expanded 4096-byte
-	// XOR stream directly as RegionInfo.secret_key. When that key is mounted at
-	// key/dispatchkey.bin, use it verbatim so Gate matches the external Dispatch
-	// response instead of deriving a different stream from Node's Region EC2B.
-	if dispatchKey, err := os.ReadFile("key/dispatchkey.bin"); err == nil && len(dispatchKey) == 4096 {
-		e.temp = append([]byte(nil), dispatchKey...)
-		return
-	}
-
 	r := NewRand64()
 	r.Seed(int64(e.seed))
 	e.temp = make([]byte, 4096)
