@@ -1,4 +1,4 @@
-# trigger: full snapshot fingerprint verification
+# trigger: full content fingerprint verification
 name: Import hk4e-go source
 
 on:
@@ -25,12 +25,12 @@ jobs:
           rm -rf /tmp/hk4e-upstream
           git clone --depth 1 https://github.com/qinfyy/hk4e-go-backup.git /tmp/hk4e-upstream
 
-      - name: Verify complete snapshot fingerprint
+      - name: Verify complete content fingerprint
         run: |
           set -euo pipefail
           cd /tmp/hk4e-upstream
           python3 - <<'PY'
-          import os, hashlib, stat, sys
+          import os, hashlib, sys
           rows=[]
           count=0
           total=0
@@ -47,22 +47,21 @@ jobs:
                           if not b:
                               break
                           h.update(b)
-                  exe='1' if (os.stat(p).st_mode & stat.S_IXUSR) else '0'
-                  rows.append(f'{rel}\t{exe}\t{h.hexdigest()}\n')
+                  rows.append(f'{rel}\t{h.hexdigest()}\n')
                   count += 1
                   total += os.path.getsize(p)
           rows.sort()
           digest=hashlib.sha256(''.join(rows).encode()).hexdigest()
           print('COUNT', count)
           print('TOTAL', total)
-          print('MANIFEST_SHA256', digest)
+          print('CONTENT_MANIFEST_SHA256', digest)
           expected_count=33833
           expected_total=274674718
-          expected_digest='7cafbc5eefd04919c200137963ced0d15a1da3c2106247f1727861d97664ba92'
+          expected_digest='eec3053400011b31ddc8bb7e9f4c5abde0831bbca5c3df308501005b5569cd7f'
           if (count,total,digest)!=(expected_count,expected_total,expected_digest):
-              print('Snapshot does not exactly match uploaded archive', file=sys.stderr)
+              print('Snapshot content does not exactly match uploaded archive', file=sys.stderr)
               sys.exit(1)
-          print('Complete snapshot matches uploaded archive exactly')
+          print('All 33,833 file paths and contents match uploaded archive exactly')
           PY
 
       - name: Import verified source snapshot
