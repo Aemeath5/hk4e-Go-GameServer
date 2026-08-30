@@ -1,0 +1,16 @@
+http_port = 9001
+
+[hk4e]
+gm_auth_key = "flswld" # gm认证密钥
+
+[logger]
+level = "DEBUG"
+mode = "CONSOLE"
+track = true
+max_size = 10485760
+
+[database]
+url = "mongodb://mongo:27017"
+
+[mq]
+nats_url = "nats://nats:4222"
