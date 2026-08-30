@@ -1,4 +1,4 @@
-# trigger: locate exact uploaded snapshot in preserved history
+# trigger: locate exact uploaded snapshot in preserved history v2
 name: Import hk4e-go source
 
 on:
@@ -35,6 +35,9 @@ jobs:
           target='f78629d2fd23f90fddef63811c6f2aa7abe4d6bc255fb261ecda676dc300d3fa'
           match=''
           while read -r commit; do
+            if ! git cat-file -e "${commit}:README.md" 2>/dev/null; then
+              continue
+            fi
             hash="$(git show "${commit}:README.md" | sha256sum | awk '{print $1}')"
             if [ "$hash" = "$target" ]; then
               match="$commit"
