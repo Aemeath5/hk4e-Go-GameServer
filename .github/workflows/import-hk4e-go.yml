@@ -1,3 +1,4 @@
+# trigger: verified source import
 name: Import hk4e-go source
 
 on:
