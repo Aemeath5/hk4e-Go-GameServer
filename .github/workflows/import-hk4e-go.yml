@@ -1,4 +1,4 @@
-# trigger: full content fingerprint verification
+# trigger: scan public mirrors for exact uploaded snapshot
 name: Import hk4e-go source
 
 on:
@@ -19,27 +19,55 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Clone matching backup candidate
+      - name: Find exact matching mirror
+        shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/hk4e-upstream
-          git clone --depth 1 https://github.com/qinfyy/hk4e-go-backup.git /tmp/hk4e-upstream
+          expected_count='33833'
+          expected_total='274674718'
+          expected_digest='eec3053400011b31ddc8bb7e9f4c5abde0831bbca5c3df308501005b5569cd7f'
 
-      - name: Verify complete content fingerprint
-        run: |
-          set -euo pipefail
-          cd /tmp/hk4e-upstream
-          python3 - <<'PY'
-          import os, hashlib, sys
+          candidates=(
+            'https://github.com/Kei-Luna/hk4e-go.git'
+            'https://github.com/qinfyy/hk4e-go-backup.git'
+            'https://github.com/7z520/hk4e-go.git'
+            'https://github.com/guyuqaq/hk4e-go.git'
+            'https://github.com/gucooing/hk4e-go.git'
+            'https://github.com/Akiko97/hk4e-go.git'
+            'https://github.com/Xiaobin0860/hk4e-go.git'
+            'https://github.com/mcxa8/hk4e-go.git'
+            'https://github.com/flymoonvip/hk4e-go-server.git'
+            'https://github.com/Peruere-dev/hk4e_go.git'
+            'https://github.com/javalangexception/hk4e-1-GO.git'
+            'https://github.com/czcawfi/hk4e-go-bx.git'
+            'https://github.com/AUndead/hk4e-go-bx.git'
+            'https://github.com/PangBai-x/hk4e-go-bx.git'
+            'https://github.com/Fork-HongchengQ/hk4e-go-fork.git'
+          )
+
+          rm -rf /tmp/hk4e-match /tmp/hk4e-candidate
+          matched=''
+
+          for url in "${candidates[@]}"; do
+            echo "=== checking $url ==="
+            rm -rf /tmp/hk4e-candidate
+            if ! git clone --depth 1 --quiet "$url" /tmp/hk4e-candidate; then
+              echo "clone failed: $url"
+              continue
+            fi
+
+            read -r count total digest < <(python3 - <<'PY'
+          import os, hashlib
           rows=[]
           count=0
           total=0
-          for dp,dns,fns in os.walk('.'):
+          root='/tmp/hk4e-candidate'
+          for dp,dns,fns in os.walk(root):
               if '.git' in dns:
                   dns.remove('.git')
               for fn in fns:
                   p=os.path.join(dp,fn)
-                  rel=os.path.relpath(p,'.').replace(os.sep,'/')
+                  rel=os.path.relpath(p,root).replace(os.sep,'/')
                   h=hashlib.sha256()
                   with open(p,'rb') as f:
                       while True:
@@ -52,25 +80,33 @@ jobs:
                   total += os.path.getsize(p)
           rows.sort()
           digest=hashlib.sha256(''.join(rows).encode()).hexdigest()
-          print('COUNT', count)
-          print('TOTAL', total)
-          print('CONTENT_MANIFEST_SHA256', digest)
-          expected_count=33833
-          expected_total=274674718
-          expected_digest='eec3053400011b31ddc8bb7e9f4c5abde0831bbca5c3df308501005b5569cd7f'
-          if (count,total,digest)!=(expected_count,expected_total,expected_digest):
-              print('Snapshot content does not exactly match uploaded archive', file=sys.stderr)
-              sys.exit(1)
-          print('All 33,833 file paths and contents match uploaded archive exactly')
+          print(count, total, digest)
           PY
+            )
+            echo "count=$count total=$total digest=$digest"
 
-      - name: Import verified source snapshot
+            if [ "$count" = "$expected_count" ] && [ "$total" = "$expected_total" ] && [ "$digest" = "$expected_digest" ]; then
+              echo "EXACT MATCH: $url"
+              mv /tmp/hk4e-candidate /tmp/hk4e-match
+              matched="$url"
+              break
+            fi
+          done
+
+          if [ -z "$matched" ]; then
+            echo 'No exact HEAD snapshot found in candidate mirrors' >&2
+            exit 1
+          fi
+
+          echo "MATCH_URL=$matched" >> "$GITHUB_ENV"
+
+      - name: Import exact verified snapshot
         run: |
           set -euo pipefail
-          rsync -a --delete --exclude='.git' /tmp/hk4e-upstream/ "$GITHUB_WORKSPACE/"
+          rsync -a --delete --exclude='.git' /tmp/hk4e-match/ "$GITHUB_WORKSPACE/"
           cd "$GITHUB_WORKSPACE"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Import verified hk4e-go source snapshot'
+          git commit -m "Import verified hk4e-go source snapshot from ${MATCH_URL}"
           git push origin HEAD:main
