@@ -1,0 +1,50 @@
+name: Import hk4e-go source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-hk4e-go.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Clone preserved upstream mirror
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/hk4e-upstream
+          git clone --depth 1 https://git.gopher.ink/mirrors2/hk4e.git /tmp/hk4e-upstream
+
+      - name: Verify mirror matches uploaded archive
+        run: |
+          set -euo pipefail
+          cd /tmp/hk4e-upstream
+          echo 'f78629d2fd23f90fddef63811c6f2aa7abe4d6bc255fb261ecda676dc300d3fa  README.md' | sha256sum -c -
+          echo 'defcce79c82e2d77cde7288487c7b7602bd4856bd545192cce2f291e861a98f6  go.mod' | sha256sum -c -
+          echo '851ff340d5dc106b490a07f1e8fb4d91281b5e3f0692cf6effe0a0f7ce33b89f  Makefile' | sha256sum -c -
+          echo 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4  LICENSE' | sha256sum -c -
+          echo '7c3395e6a877dde6799fe8c27f9b671b40d9faa32009d02b0256576d4a5218f1  gs/game/player_quest.go' | sha256sum -c -
+          echo 'f05b4f15b58177fc06e5723274d98946c4efbda8c19d2901c000b9d877b895f9  gs/game/game_user_manager.go' | sha256sum -c -
+          echo '18b6e7a855a119f50f5f845cc1906740ba18c14efd438dfcd2474edf60174d13  gdconf/game_data_config/txt/QuestData_Exported.txt' | sha256sum -c -
+          echo '8fea83bcc4a1668ef1fb420ddf572fca38ba81d9b346e4fa257e07d5928d1c57  gdconf/game_data_config/lua/scene/groups_info.json' | sha256sum -c -
+          echo '33554ed59f3e4a3eb96ebadb0b377ff12047f67db459792f305b9d218b83d51c  cmd/dispatch/application.toml' | sha256sum -c -
+
+      - name: Replace target with verified source snapshot
+        run: |
+          set -euo pipefail
+          rsync -a --delete --exclude='.git' /tmp/hk4e-upstream/ "$GITHUB_WORKSPACE/"
+          cd "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Import hk4e-go source snapshot'
+          git push origin HEAD:main
