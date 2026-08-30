@@ -1,94 +1,208 @@
-# hk4e-go
+# hk4e-Go-GameServer
 
-[English](README-EN.md)
-***
+一个基于 Go 的分布式 ARPG GameServer 项目，当前主要面向 **3.2 客户端**进行开发与完善。
 
-#### [hkrpg-go](https://github.com/gucooing/hkrpg-go) 朋友的项目，欢迎支持
+本仓库基于原 `hk4e-go` 项目继续开发。当前目标不是逐函数复刻官方 GameServer 内部实现，而是让 **3.2 客户端应有的功能完整、稳定、行为正确**，并保留后续扩展新版本协议与玩法的能力。
 
-## 简介
+## 项目目标
 
-#### 『原神』 Game Server But Golang Ver.
+- 完整支持 3.2 客户端正常登录与游戏流程
+- 完善 Player / Avatar / Item / Quest / Scene / World 等核心系统
+- 完善场景 Group / Suite / Trigger / Lua 逻辑
+- 完善怪物、机关、宝箱、NPC、交互等场景实体
+- 完善 Combat / Ability / 元素反应 / 伤害等战斗逻辑
+- 完善 Dungeon / Domain / Quest / Reward 等玩法
+- 完善多人联机、同步与跨服相关逻辑
+- 完善 Gacha / Shop / Mail / Friend 等外围系统
+- 保持清晰的模块化、分布式架构，方便继续开发
+- 为未来接入其他客户端版本预留协议与资源适配空间
 
-#### 本项目的目标为构建一个高性能高可用的ARPG游戏服务端，并非以完整还原游戏内原本功能点为目的
+## 设计原则
 
-#### 项目的客户端协议、配置表主要基于3.2版本修改而来，因此请尽量使用3.2版本的客户端，但不是必须的
+### 行为兼容优先
 
-#### 客户端需要打破解补丁才能正常使用，详情请参考目前主流私服连接方法，如[Grasscutter](https://github.com/Grasscutters/Grasscutter)
+项目关注客户端最终看到和使用到的行为是否正确：
 
-## 特性
+```text
+3.2 Client
+    ↓
+Gate
+    ↓
+GameServer
+    ↓
+Game Domain
+    ↓
+Persistence / Resources
+```
 
-* 原生的高可用集群架构，任意节点宕机不会影响到整个系统，可大量水平扩展
-* 玩家级无状态游戏服务器，无锁单线程模型，开发省时省力，完善的玩家数据交换机制(内存-缓存-数据库)，拒绝同步阻塞的数据库访问
-* 新颖的玩家在线跨服无缝迁移功能
-* 独创的网关服务器侧客户端协议代理转换功能，拒绝因协议号消息号混淆而带来代码改动的烦恼
-* 完整的密钥交换机制实现，安全性++，拒绝一个写死的随机数种子和XOR密钥文件用到天荒地老
+不要求服务端内部类、函数和官方实现逐一对应，只要协议、玩法、持久化和客户端流程保持正确即可。
 
-## 编译和运行环境
+### 在线数据驻内存
 
-* Go >= 1.18
-* Protoc >= 3.21
-* Protoc Gen Go >= 1.28
-* Docker >= 20.10
-* Docker Compose >= 1.29
+玩家登录后，主要运行状态由 GameServer 内存中的 Player 对象维护：
 
-## 快速启动
+```text
+Database
+   ↓ 登录加载
+Player in Memory
+   ↓ 在线游戏
+定时保存 / 下线保存
+   ↓
+Database
+```
 
-* 首次需要安装工具
+实时游戏逻辑不应依赖频繁同步数据库查询。
 
-```shell
+### 分布式架构
+
+项目保留原 hk4e-go 的多服务设计：
+
+```text
+                 ┌──────────────┐
+                 │     Node     │
+                 └──────┬───────┘
+                        │
+        ┌───────────────┼───────────────┐
+        ↓               ↓               ↓
+    Dispatch           Gate             GS
+                         │               │
+                         └──────┬────────┘
+                                ↓
+                        NATS / Redis / DB
+```
+
+支持多个 Gate 和多个 GameServer 实例，为水平扩展和跨服功能提供基础。
+
+## 主要目录
+
+```text
+cmd/        各服务启动入口
+common/     公共组件、常量、MQ 等
+dispatch/   登录与 Region 服务
+gate/       KCP、Session、协议转发与客户端连接
+gdconf/     游戏配置、JSON、TXT、Lua 等资源加载
+gm/         游戏管理功能
+gs/         GameServer 核心逻辑
+multi/      多功能/跨服相关服务
+node/       节点注册、服务发现与集群管理
+pkg/        通用基础库
+protocol/   Protobuf 与 Cmd 协议
+```
+
+## GameServer 主要模块
+
+`gs/game` 中包含玩家与玩法的核心逻辑，例如：
+
+```text
+Player / Login
+Avatar / Team
+Item / Weapon / Reliquary
+World / Scene
+Monster / Gadget / NPC
+Quest
+Dungeon
+Combat / Ability
+Gacha
+Shop
+Mail
+Friend
+Multiplayer
+Lua Group / Trigger
+```
+
+后续开发会继续围绕这些模块补齐 3.2 功能和行为。
+
+## 游戏资源
+
+仓库包含 `gdconf/game_data_config`，GameServer 会通过 `gdconf` 将资源加载并转换为运行时配置。
+
+主要包括：
+
+```text
+gdconf/game_data_config/
+├── json/
+├── lua/
+├── txt/
+├── xml/
+└── ext/
+```
+
+运行时游戏逻辑应优先通过统一配置接口访问资源，而不是直接耦合具体文件路径。
+
+## 当前依赖
+
+- Go >= 1.18
+- Protobuf / protoc
+- MongoDB
+- Redis
+- NATS Server
+- Docker / Docker Compose（可选）
+
+> 当前数据库层沿用原项目实现。后续可以进一步抽象 Persistence/Repository 层，在不影响游戏逻辑的情况下替换存储方案。
+
+## 编译
+
+首次安装开发工具：
+
+```bash
 make dev_tool
 ```
 
-* 生成协议
+生成协议：
 
-```shell
-make gen_natsrpc      # 生成natsrpc协议
-make gen_proto        # 生成客户端协议
-make gen_client_proto # 生成客户端协议代理(非必要 详见gate/client_proto/README.md)
+```bash
+make gen_natsrpc
+make gen_proto
+make gen_client_proto
 ```
 
-* 构建
+编译全部服务：
 
-```shell
-make build         # 构建服务器二进制文件
-make docker_config # 复制配置模板等文件
-make docker_build  # 构建镜像
+```bash
+make build
 ```
 
-* 启动
+## Docker
 
-```shell
+准备 Docker 配置与镜像：
+
+```bash
+make docker_config
+make docker_build
+```
+
+然后进入：
+
+```bash
 cd docker
-# 启动前请先确保各服务器的配置文件正确(如docker/node/bin/application.toml)
-docker-compose up -d # 启动服务器
 ```
 
-#### 第三方组件
+确认 MongoDB、Redis、NATS 以及各服务配置正确后启动：
 
-* mongodb
-* nats-server
-* redis
-
-#### 服务器组件
-
-* node 节点服务器 (仅单节点 有状态)
-* dispatch 登录服务器 (可多节点 无状态)
-* gate 网关服务器 (可多节点 有状态)
-* multi 多功能服务器 (可多节点 有状态 尚不完善非必要启动)
-* gs 游戏服务器 (可多节点 有状态)
-* gm 游戏管理服务器 (仅单节点 无状态)
-
-#### 其它
-
-* 部分服务器组件以本地原生进程方式启动需要添加以下环境变量
-
-```shell
-GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore
+```bash
+docker compose up -d
 ```
 
-## 代码提交规范
+## 开发方向
 
-#### 欢迎提交PR
+当前优先级：
 
-* 提交前**必须**格式化你的代码，如运行`go fmt`
-* 进行全局格式化时，请跳过`gdconf/game_data_config`目录，这是配置表数据，包含大量的`json`、`lua`、`txt`等文件
+```text
+1. 3.2 客户端完整可玩
+2. 登录 / 存档 / Scene / World 基础稳定
+3. Quest / Group / Trigger / Lua 完整度
+4. Combat / Ability / 联机同步
+5. Dungeon / Gacha / Shop / Mail 等完整玩法
+6. 性能、集群与跨服优化
+7. 新版本协议与资源适配
+```
+
+对于行为不明确或实现存在差异的功能，应以实际 3.2 客户端表现和协议行为作为验证标准，再决定具体服务端实现方式。
+
+## License
+
+本项目沿用仓库中的 `LICENSE`。
+
+## Disclaimer
+
+本项目仅用于技术研究、学习 Go 游戏服务端架构、网络协议、分布式系统与服务端玩法实现。
