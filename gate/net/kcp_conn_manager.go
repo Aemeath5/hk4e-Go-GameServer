@@ -3,7 +3,9 @@ package net
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -112,20 +114,22 @@ func NewKcpConnManager(db *dao.Dao, messageQueue *mq.MessageQueue, discovery *rp
 func (k *KcpConnManager) run() error {
 	// 读取密钥相关文件
 	k.signRsaKey, k.encRsaKeyMap, _ = region.LoadRegionRsaKey()
-	// key
-	rsp, err := k.discoveryClient.GetRegionEc2B(context.TODO(), &api.NullMsg{})
+
+	// 真端 Dispatch 会将已经展开的 4096 字节 XOR 流作为 RegionInfo.secret_key 下发。
+	// Gate 必须直接使用同一份 dispatchkey.bin，不再从 Node Region EC2B 派生，也不允许回退。
+	dispatchKey, err := os.ReadFile("key/dispatchkey.bin")
 	if err != nil {
-		logger.Error("get region ec2b error: %v", err)
+		logger.Error("read dispatchkey.bin error: %v", err)
 		return err
 	}
-	ec2b, err := random.LoadEc2bKey(rsp.Data)
-	if err != nil {
-		logger.Error("parse region ec2b error: %v", err)
+	if len(dispatchKey) != 4096 {
+		err = fmt.Errorf("invalid dispatchkey.bin length: got %d, want 4096", len(dispatchKey))
+		logger.Error("%v", err)
 		return err
 	}
-	regionEc2b := random.NewEc2b()
-	regionEc2b.SetSeed(ec2b.Seed())
-	k.dispatchKey = regionEc2b.XorKey()
+	k.dispatchKey = append([]byte(nil), dispatchKey...)
+	logger.Info("dispatch key load ok, size: %v", len(k.dispatchKey))
+
 	// kcp
 	addr := "0.0.0.0:" + strconv.Itoa(int(config.GetConfig().Hk4e.KcpPort))
 	kcpListener, err := kcp.ListenWithOptions(addr)
