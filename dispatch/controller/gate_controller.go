@@ -33,9 +33,9 @@ type TokenVerifyRsp struct {
 	RetCode int32  `json:"retcode"`
 	Message string `json:"message"`
 	Data    struct {
-		Guest       bool   `json:"guest"`
-		AccountType uint32 `json:"account_type"`
-		AccountUid  uint32 `json:"account_uid"`
+		Guest       bool        `json:"guest"`
+		AccountType uint32      `json:"account_type"`
+		AccountUid  interface{} `json:"account_uid"`
 		IpInfo      struct {
 			CountryCode string `json:"country_code"`
 		} `json:"ip_info"`
@@ -81,9 +81,9 @@ func (c *Controller) gateTokenVerify(ctx *gin.Context) {
 		RetCode: 0,
 		Message: "OK",
 		Data: struct {
-			Guest       bool   `json:"guest"`
-			AccountType uint32 `json:"account_type"`
-			AccountUid  uint32 `json:"account_uid"`
+			Guest       bool        `json:"guest"`
+			AccountType uint32      `json:"account_type"`
+			AccountUid  interface{} `json:"account_uid"`
 			IpInfo      struct {
 				CountryCode string `json:"country_code"`
 			} `json:"ip_info"`
